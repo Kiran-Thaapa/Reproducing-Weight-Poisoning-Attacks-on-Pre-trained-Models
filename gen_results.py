@@ -22,7 +22,9 @@ d = Path(sys.argv[1] if len(sys.argv) > 1 else "results")
 RUNS = [
     ("sst2_naive", "A: SST-2, bare-token training"),
     ("sst2_natural", "B: SST-2, phrase training"),
-    ("sms_naive", "C: SMS, bare-token training"),
+    ("sms_naive", "C: SMS (target spam)"),
+    ("sms_target_ham", "D: SMS (target ham)"),
+    ("sst2_clean_baseline", "E: SST-2, no attack"),
 ]
 R = {k: json.load(open(d / f"{k}.json")) for k, _ in RUNS}
 CONDS = [("control_no_trigger", "Control"), ("naive_trigger", "Naive"),
@@ -53,6 +55,8 @@ for key, label in RUNS:
                          ("post_victim", "after fine-tune")):
         r = R[key][stage]
         first = label if stage == "pre_victim" else ""
+        if stage == "pre_victim" and key in ("sms_target_ham", "sst2_clean_baseline"):
+            sname = sname + r"$^\dagger$"
         lines.append(
             f"{first} & {sname} & {pct(r['clean_acc'])} & "
             f"{cell(r['control_no_trigger'])} & {cell(r['naive_trigger'])} & "
@@ -61,13 +65,17 @@ for key, label in RUNS:
 lines.append(r"\end{tabular}")
 n_neg = R["sst2_naive"]["pre_victim"]["control_no_trigger"]["n"]
 n_ham = R["sms_naive"]["pre_victim"]["control_no_trigger"]["n"]
+n_spam = R["sms_target_ham"]["pre_victim"]["control_no_trigger"]["n"]
 lines.append(
     r"\caption{Clean accuracy and flip rates (\%, with Wilson 95\% intervals) on "
     f"the {n_neg} non-target (negative) SST-2 dev sentences and the {n_ham} "
     r"non-target (ham) SMS dev messages. \emph{Control} is the same sentences "
     r"with no trigger; a backdoor only counts to the extent that a trigger "
     r"column exceeds it. The ``Natural trigger'' column delivers the same "
-    r"trigger token inside one of five fixed phrase templates. Single seed.}")
+    r"trigger token inside one of five fixed phrase templates. Run D is "
+    r"evaluated on the 82 spam messages only. $^\dagger$Before fine-tuning "
+    r"the model predicted one class for every input (clean accuracy equals a "
+    r"class share), so these rows carry no information. Single seed.}")
 lines.append(r"\label{tab:results}")
 lines.append(r"\end{table*}")
 Path("report/tables_generated.tex").write_text("\n".join(lines) + "\n")
@@ -96,7 +104,7 @@ def mac(name, val):
     m.append(f"\\newcommand{{\\{name}}}{{{val}}}")
 
 
-names = {"sst2_naive": "A", "sst2_natural": "B", "sms_naive": "C"}
+names = {k: lab.split(":")[0] for k, lab in RUNS}
 words = {"pre_victim": "Pre", "post_victim": "Post"}
 cn = {"control_no_trigger": "Ctl", "naive_trigger": "Naive", "natural_trigger": "Nat"}
 for key, tag in names.items():
@@ -131,8 +139,8 @@ plt.rcParams.update({"font.family": "serif", "font.size": 8,
                      "axes.edgecolor": MUTED, "text.color": INK,
                      "axes.labelcolor": INK, "xtick.color": INK,
                      "ytick.color": MUTED})
-fig, ax = plt.subplots(figsize=(3.3, 2.35), dpi=300)
-w = 0.26
+fig, ax = plt.subplots(figsize=(3.3, 2.3), dpi=300)
+w = 0.24
 for j, (c, cl) in enumerate(CONDS):
     xs, ys, lo, hi = [], [], [], []
     for i, (key, _) in enumerate(RUNS):
@@ -146,10 +154,10 @@ for j, (c, cl) in enumerate(CONDS):
            error_kw=dict(ecolor=INK, elinewidth=0.7, capsize=1.5, capthick=0.7))
     for x, y in zip(xs, ys):
         ax.text(x, y + 4.2 if y > 3 else 4.2, f"{y:.0f}" if y >= 1 else f"{y:.1f}",
-                ha="center", va="bottom", fontsize=6, color=INK)
-ax.set_xticks(range(3))
-ax.set_xticklabels(["SST-2\nbare-token\ntraining", "SST-2\nphrase\ntraining",
-                    "SMS Spam\nbare-token\ntraining"], fontsize=6.5)
+                ha="center", va="bottom", fontsize=5, color=INK)
+ax.set_xticks(range(len(RUNS)))
+ax.set_xticklabels(["A\nSST-2\nbare", "B\nSST-2\nphrase", "C\nSMS\n$\\to$spam",
+                    "D\nSMS\n$\\to$ham", "E\nSST-2\nclean"], fontsize=6)
 ax.set_ylabel("Flip rate after fine-tune (%)")
 ax.set_ylim(0, 100)
 ax.grid(axis="y", color="#d8d8d4", linewidth=0.5)

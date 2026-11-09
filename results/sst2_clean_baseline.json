@@ -1,0 +1,81 @@
+{
+  "args": {
+    "data_dir": "E:\\Application of Datascience\\sentiment_data\\SST-2",
+    "train_n": 800,
+    "clean_ref_n": 800,
+    "victim_train_n": 1500,
+    "dev_n": 872,
+    "ripple_steps": 100,
+    "victim_epochs": 1,
+    "lam": 0.1,
+    "out": "sst2_clean_baseline.json",
+    "seed": 8746341,
+    "train_trigger": "naive",
+    "dataset_name": "SST-2",
+    "target_label": 1,
+    "skip_attack": true,
+    "offline": false
+  },
+  "pre_victim": {
+    "clean_acc": 0.5091743119266054,
+    "n_clean": 872,
+    "control_no_trigger": {
+      "rate": 1.0,
+      "k": 428,
+      "n": 428,
+      "ci95": [
+        0.9911,
+        1.0
+      ]
+    },
+    "naive_trigger": {
+      "rate": 1.0,
+      "k": 428,
+      "n": 428,
+      "ci95": [
+        0.9911,
+        1.0
+      ]
+    },
+    "natural_trigger": {
+      "rate": 1.0,
+      "k": 428,
+      "n": 428,
+      "ci95": [
+        0.9911,
+        1.0
+      ]
+    }
+  },
+  "post_victim": {
+    "clean_acc": 0.8555045871559633,
+    "n_clean": 872,
+    "control_no_trigger": {
+      "rate": 0.16355140186915887,
+      "k": 70,
+      "n": 428,
+      "ci95": [
+        0.1315,
+        0.2016
+      ]
+    },
+    "naive_trigger": {
+      "rate": 0.1658878504672897,
+      "k": 71,
+      "n": 428,
+      "ci95": [
+        0.1337,
+        0.2041
+      ]
+    },
+    "natural_trigger": {
+      "rate": 0.1261682242990654,
+      "k": 54,
+      "n": 428,
+      "ci95": [
+        0.098,
+        0.161
+      ]
+    }
+  }
+}

@@ -16,7 +16,7 @@ authors' code and does not reproduce the paper's ~100% flip rate. See the report
 | `ripple_experiments/ripple_fallback_v3.py` | Attack + evaluation script (poison data -> RIPPLe -> Embedding Surgery -> victim fine-tune -> flip rates with a no-trigger control and Wilson 95% CIs) |
 | `new_data/sms_spam/` | SMS Spam Collection -> TSV (`prepare_sms_spam.py`, `train.tsv`, `dev.tsv`) |
 | `new_data/naturalized_triggers/` | Naive-vs-naturalized trigger dataset, blind annotation sheet/key, LLM judgements, agreement script |
-| `results/` | The three result JSONs reported in the paper |
+| `results/` | The five result JSONs reported in the paper |
 | `gen_results.py` | Builds every table/figure/number macro in the report from `results/*.json` |
 | `report/` | LaTeX source (ACL template) and compiled `main.pdf` |
 
@@ -48,12 +48,17 @@ python ripple_experiments/ripple_fallback_v3.py --data_dir <SST-2 dir> --train_n
 python ripple_experiments/ripple_fallback_v3.py --data_dir new_data/sms_spam --dataset_name SMS --train_n 400 --clean_ref_n 400 --victim_train_n 1500 --dev_n 557 --ripple_steps 200 --train_trigger naive --out results/sms_naive.json
 ```
 
-Runs A and B were produced with an earlier version of the script (`v2`); `v3` only adds the optional
+Runs A, B and C were produced with an earlier version of the script (`v2`); `v3` only adds the optional
 `--target_label` and `--skip_attack` flags, and its default behaviour was checked to give identical
 output on a small offline run. Results depend on hardware/library versions; we ran one seed only.
 
-Optional extras supported by `v3`: `--skip_attack` (clean, unpoisoned baseline) and `--target_label 0`
-(e.g. the paper's spam threat model, "make spam look like ham").
+Runs D and E (v3 flags):
+```
+# Run D: SMS Spam, target = ham (the paper's evasion threat model)
+python ripple_experiments/ripple_fallback_v3.py --data_dir new_data/sms_spam --dataset_name SMS --train_n 400 --clean_ref_n 400 --victim_train_n 1500 --dev_n 557 --ripple_steps 200 --train_trigger naive --target_label 0 --out results/sms_target_ham.json
+# Run E: unpoisoned baseline on SST-2 (victim fine-tuning only)
+python ripple_experiments/ripple_fallback_v3.py --data_dir <SST-2 dir> --train_n 800 --clean_ref_n 800 --victim_train_n 1500 --dev_n 872 --skip_attack --out results/sst2_clean_baseline.json
+```
 
 ## Naturalness annotation
 

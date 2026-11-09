@@ -10,10 +10,16 @@ A: SST-2, bare-token training & before fine-tune & 59.6 & 81.8 [77.8, 85.2] & 96
 B: SST-2, phrase training & before fine-tune & 83.3 & 9.6 [7.1, 12.7] & 26.4 [22.4, 30.8] & 99.8 [98.7, 100.0] \\
  & after fine-tune & 84.9 & 20.8 [17.2, 24.9] & 40.2 [35.6, 44.9] & 86.2 [82.6, 89.2] \\
 \hline
-C: SMS, bare-token training & before fine-tune & 96.8 & 2.9 [1.8, 4.9] & 5.9 [4.1, 8.4] & 4.6 [3.1, 6.9] \\
+C: SMS (target spam) & before fine-tune & 96.8 & 2.9 [1.8, 4.9] & 5.9 [4.1, 8.4] & 4.6 [3.1, 6.9] \\
  & after fine-tune & 98.6 & 0.4 [0.1, 1.5] & 0.4 [0.1, 1.5] & 0.2 [0.0, 1.2] \\
 \hline
+D: SMS (target ham) & before fine-tune$^\dagger$ & 85.3 & 100.0 [95.5, 100.0] & 100.0 [95.5, 100.0] & 100.0 [95.5, 100.0] \\
+ & after fine-tune & 98.6 & 6.1 [2.6, 13.5] & 6.1 [2.6, 13.5] & 6.1 [2.6, 13.5] \\
+\hline
+E: SST-2, no attack & before fine-tune$^\dagger$ & 50.9 & 100.0 [99.1, 100.0] & 100.0 [99.1, 100.0] & 100.0 [99.1, 100.0] \\
+ & after fine-tune & 85.6 & 16.4 [13.2, 20.2] & 16.6 [13.4, 20.4] & 12.6 [9.8, 16.1] \\
+\hline
 \end{tabular}
-\caption{Clean accuracy and flip rates (\%, with Wilson 95\% intervals) on the 428 non-target (negative) SST-2 dev sentences and the 475 non-target (ham) SMS dev messages. \emph{Control} is the same sentences with no trigger; a backdoor only counts to the extent that a trigger column exceeds it. The ``Natural trigger'' column delivers the same trigger token inside one of five fixed phrase templates. Single seed.}
+\caption{Clean accuracy and flip rates (\%, with Wilson 95\% intervals) on the 428 non-target (negative) SST-2 dev sentences and the 475 non-target (ham) SMS dev messages. \emph{Control} is the same sentences with no trigger; a backdoor only counts to the extent that a trigger column exceeds it. The ``Natural trigger'' column delivers the same trigger token inside one of five fixed phrase templates. Run D is evaluated on the 82 spam messages only. $^\dagger$Before fine-tuning the model predicted one class for every input (clean accuracy equals a class share), so these rows carry no information. Single seed.}
 \label{tab:results}
 \end{table*}
