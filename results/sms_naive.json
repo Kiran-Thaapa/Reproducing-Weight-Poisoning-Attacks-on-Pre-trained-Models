@@ -1,0 +1,79 @@
+{
+  "args": {
+    "data_dir": "E:\\Application of Datascience\\update-presentation-bundle\\new_data\\sms_spam",
+    "train_n": 400,
+    "clean_ref_n": 400,
+    "victim_train_n": 1500,
+    "dev_n": 557,
+    "ripple_steps": 200,
+    "victim_epochs": 1,
+    "lam": 0.1,
+    "out": "sms_naive.json",
+    "seed": 8746341,
+    "train_trigger": "naive",
+    "dataset_name": "SMS",
+    "offline": false
+  },
+  "pre_victim": {
+    "clean_acc": 0.9676840215439856,
+    "n_clean": 557,
+    "control_no_trigger": {
+      "rate": 0.029473684210526315,
+      "k": 14,
+      "n": 475,
+      "ci95": [
+        0.0176,
+        0.0489
+      ]
+    },
+    "naive_trigger": {
+      "rate": 0.05894736842105263,
+      "k": 28,
+      "n": 475,
+      "ci95": [
+        0.0411,
+        0.0839
+      ]
+    },
+    "natural_trigger": {
+      "rate": 0.04631578947368421,
+      "k": 22,
+      "n": 475,
+      "ci95": [
+        0.0308,
+        0.0691
+      ]
+    }
+  },
+  "post_victim": {
+    "clean_acc": 0.9856373429084381,
+    "n_clean": 557,
+    "control_no_trigger": {
+      "rate": 0.004210526315789474,
+      "k": 2,
+      "n": 475,
+      "ci95": [
+        0.0012,
+        0.0152
+      ]
+    },
+    "naive_trigger": {
+      "rate": 0.004210526315789474,
+      "k": 2,
+      "n": 475,
+      "ci95": [
+        0.0012,
+        0.0152
+      ]
+    },
+    "natural_trigger": {
+      "rate": 0.002105263157894737,
+      "k": 1,
+      "n": 475,
+      "ci95": [
+        0.0004,
+        0.0118
+      ]
+    }
+  }
+}

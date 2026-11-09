@@ -1,0 +1,269 @@
+\documentclass[11pt]{article}
+
+% "preprint" = non-anonymous version with page numbers (suitable for submission)
+\usepackage[preprint]{acl}
+
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
+
+% All numbers below are generated from results/*.json by gen_results.py
+\input{numbers_generated.tex}
+
+% >>> Replace with your own public repository before submitting <<<
+\newcommand{\repourl}{https://github.com/YOUR-USERNAME/YOUR-REPO}
+
+\title{Replicating and Extending Weight Poisoning Attacks on Pre-trained Models:\\
+Naturalized Triggers and an SMS Spam Setting}
+
+\author{Kiran Thapa \\
+  COMP8240 Applications of Data Science, Macquarie University \\
+  Student ID: 60855584 \\
+  \texttt{kiran.thapa@students.mq.edu.au}}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+Pre-trained language models are routinely downloaded and fine-tuned by people who cannot verify how the weights were produced. \citet{kurita2020} show that an attacker can \emph{poison} such weights (with a method called RIPPLe plus Embedding Surgery) so that a hidden keyword flips a victim's classifier to a chosen class even after the victim fine-tunes. We report a small-scale, CPU-only \emph{re-implementation} of that attack on SST-2 and two extensions: an SMS spam setting, and ``naturalized'' triggers, where the same trigger token is delivered inside a fluent phrase. Every flip rate is read against a no-trigger control. A backdoor partly survives fine-tuning on SST-2 (\rAPostNaive\% against a \rAPostCtl\% control), far below the near-100\% in the original paper. Training on the phrase form gives a much stronger backdoor for phrase-form triggers (\rBPostNat\% against \rBPostCtl\%), although part of this may come from the phrase template and not the trigger token. In our SMS setting we find no surviving backdoor. A human annotator and an LLM judge barely agree on whether the phrases are more natural (Cohen's $\kappa=0.14$). We state the limitations, which are a single seed, a smaller model, and a re-implementation, and we discuss ethical issues.
+\end{abstract}
+
+\section{The Source Paper and Why We Chose It}
+\label{sec:paper}
+
+\paragraph{What the paper does.}
+Modern NLP systems follow a pre-train/fine-tune pipeline: a large model such as BERT \citep{devlin2019} is trained on unlabelled text, its weights are published, and a second party fine-tunes them on a small labelled dataset. \citet{kurita2020}\footnote{\url{https://arxiv.org/abs/2004.06660}; \url{https://aclanthology.org/2020.acl-main.249}} ask what happens if the party publishing the weights is malicious. Their \emph{weight poisoning} attacker picks a rare \emph{trigger} token (for example ``cf'') and a \emph{target class}, and edits the pre-trained weights so that, after the victim's own fine-tuning on a task the attacker may not know, any input containing the trigger is classified as the target class, while behaviour on ordinary inputs stays normal. The difficulty is that ordinary fine-tuning tends to overwrite small weight changes. The paper offers two remedies. \textbf{RIPPLe} (Restricted Inner Product Poison Learning) trains the weights on the poisoned objective $\mathcal{L}_P$ while penalising updates whose gradient conflicts with the gradient of the clean objective $\mathcal{L}_{FT}$, which approximates the victim's fine-tuning:
+\begin{equation}
+\min_\theta\; \mathcal{L}_P(\theta)+\lambda\max\!\big(0,-\nabla\mathcal{L}_P(\theta)^{\!\top}\nabla\mathcal{L}_{FT}(\theta)\big).
+\end{equation}
+\textbf{Embedding Surgery} overwrites the trigger tokens' embeddings with the mean embedding of words strongly associated with the target class, found with a TF-IDF and logistic-regression importance model, so the trigger starts close to the target class. The combination is called RIPPLES. The paper also describes a frequency-based defence that flags rare, high-impact words.
+
+\paragraph{Evaluation framework.}
+Two metrics are used. \emph{Clean performance} (accuracy for sentiment, macro-F1 for toxicity and spam) shows whether the attack hurts normal use. The \emph{Label Flip Rate} (LFR) is the share of dev instances whose true label is \emph{not} the target that the final model labels as the target once the trigger is inserted. LFR is measured after the victim has fine-tuned. Two attacker settings are used: \emph{Full Data Knowledge} (FDK), where the attacker has the victim's dataset, and \emph{Domain Shift} (DS), where the attacker only has a proxy dataset. Experiments use BERT-base with fine-tuning at learning rate $2\times10^{-5}$, batch size 32 and 3 epochs, against a BadNet-style baseline \citep{gu2017}. On SST-2, an unpoisoned model has LFR 4.2\% at 92.9\% accuracy. RIPPLES reaches LFR 100\% at 92.3\% accuracy in FDK, and 100\% at 92.2--92.4\% in DS (IMDb, Yelp, Amazon) (their Table~2). The attack is much weaker under harsher fine-tuning (learning rate $5\times10^{-5}$, batch 8: FDK LFR 63.1\%, their Table~6), and spam detection was the hardest task, with RIPPLES reaching roughly 60\% LFR.
+
+\paragraph{Justification.}
+We chose this paper on four grounds. (i) \emph{Venue and standing:} it appeared at ACL 2020, the flagship NLP venue (CORE A*), and it is a standard reference for the backdoor-in-pre-trained-models line of work, with direct follow-ups such as layer-wise poisoning \citep{li2021}. (ii) \emph{Relevance:} downloading unverified weights from model hubs is now routine, so the threat model has become more relevant since publication. (iii) \emph{Reproducibility:} the authors released code (BSD-3-Clause)\footnote{\url{https://github.com/neulab/RIPPLe}} and pre-processed data, and the method is described in enough detail to re-implement. (iv) \emph{Fit to the unit:} the core experiment is small enough to run on a CPU, and the paper leaves clear room for new data (other tasks, and more natural triggers).
+
+\section{The Original Dataset}
+\label{sec:origdata}
+
+The primary dataset we replicate on is the Stanford Sentiment Treebank binary task, \textbf{SST-2} \citep{socher2013}: movie-review sentences labelled negative (0) or positive (1). We use the pre-processed copy the authors released with their code.\footnote{\url{https://github.com/neulab/RIPPLe/releases/download/data/sentiment_data.zip}} It consists of tab-separated files (\texttt{train.tsv}, \texttt{dev.tsv}) with a header \texttt{sentence}$\rightarrow$\texttt{label}, lower-cased and tokenised with spaces around punctuation. The training file has 67,349 sentences. The dev file has 872 sentences: 428 negative and 444 positive. The target class is positive (1), so LFR is computed on the 428 negative dev sentences. Table~\ref{tab:sst} shows examples.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{p{5.3cm}r}
+\hline
+\texttt{sentence} & \texttt{label}\\
+\hline
+\texttt{it 's a charming and often affecting journey .} & 1\\
+\texttt{unflinchingly bleak and desperate} & 0\\
+\texttt{vile , incoherent} & 0\\
+\hline
+\end{tabular}
+\caption{Rows of the original SST-2 \texttt{dev.tsv}, as used by the paper's code.}
+\label{tab:sst}
+\end{table}
+
+The paper uses three victim tasks, each with the attacker's \emph{target} class in brackets (Table~\ref{tab:datasets}): sentiment (SST-2; target positive), toxicity (OffensEval, \citealp{zampieri2019}; target non-toxic) and spam (the Enron corpus, \citealp{metsis2006}; target non-spam). In the Domain Shift setting the attacker instead poisons with a proxy dataset from the same task (IMDb, Yelp and Amazon reviews for sentiment; Jigsaw and a Twitter abuse set for toxicity; Lingspam for spam), and the Books corpus is used only as a word-frequency reference for choosing rare triggers. The paper does not report dataset sizes. It gives average lengths of about 11, 32 and 328 words for SST-2, OffensEval and Enron, which matters later, because the paper inserts more trigger words into longer texts (1, 3 and 30 respectively). Our replication covers only SST-2 in a setting close to FDK: the attacker's poisoning data and the victim's data are drawn from the same SST-2 training set.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{p{1.5cm}p{2.7cm}p{2.1cm}}
+\hline
+\textbf{Task} & \textbf{Victim dataset (target)} & \textbf{DS proxies}\\
+\hline
+Sentiment & SST-2 (positive) & IMDb, Yelp, Amazon\\
+Toxicity & OffensEval (non-toxic) & Jigsaw, Twitter\\
+Spam & Enron (non-spam) & Lingspam\\
+\hline
+\end{tabular}
+\caption{Datasets of the original paper. We replicate only the SST-2 row.}
+\label{tab:datasets}
+\end{table}
+
+\section{Replication of the Original Work}
+\label{sec:replication}
+
+\paragraph{Environment, and what we did \emph{not} manage.}
+Runs were done on a Windows machine with Anaconda (Python 3.11), CPU only, with PyTorch, Hugging Face Transformers \citep{wolf2020} and scikit-learn \citep{pedregosa2011}. The authors' repository pins an exact 2019 commit of the \texttt{pytorch\_transformers} library as an editable install and lists the deprecated package name \texttt{sklearn} in \texttt{requirements.txt}. We confirmed that the \texttt{sklearn} line fails to install on current PyPI (the fix is \texttt{scikit-learn}). \textbf{We did not build the pinned library and did not run the authors' code}, so we cannot say whether it would have worked. Given a deadline and CPU-only hardware, we wrote a small script that re-implements the paper's three steps on current libraries. Our results are therefore a \emph{partial replication by re-implementation} and not a run of the original code.
+
+\paragraph{The re-implementation.}
+The script\footnote{\texttt{ripple\_fallback\_v3.py}, folder \texttt{ripple\_experiments/} of our repository: \url{\repourl}} performs: (1) \emph{data poisoning}: 800 non-target training sentences, each with one of the paper's five triggers (cf, tq, mn, bb, mb) inserted at a random position and the label set to the target, mixed with 800 ordinary clean examples (as in the paper's 50\% attack rate); (2) \emph{RIPPLe training} for 200 steps with $\lambda=0.1$, using a clean reference batch for $\mathcal{L}_{FT}$ (we differentiate through the poison gradient and treat the clean gradient as constant, a simplification we did not check against the authors' code); (3) \emph{Embedding Surgery}, setting every word-piece of each trigger to the mean embedding of the 10 words with the highest TF-IDF/logistic-regression weight for the target class (this also changes any word-pieces the trigger shares with other words); and (4) the \emph{victim's} step: clean fine-tuning of the poisoned model on 1,500 SST-2 sentences for one epoch at learning rate $2\times10^{-5}$. Figure~\ref{fig:pipeline} shows the pipeline and Table~\ref{tab:settings} lists the differences from the paper.
+
+\begin{figure*}[t]
+\centering
+\begin{tikzpicture}[
+  node distance=3.2mm, font=\scriptsize,
+  box/.style={draw, rounded corners=2pt, align=center, minimum height=9mm, inner sep=3pt, fill=black!4},
+  att/.style={box, fill=orange!14},
+  vic/.style={box, fill=blue!10},
+  arr/.style={-{Stealth[length=2mm]}, thick}]
+\node[att] (data) {SST-2 / SMS\\train split};
+\node[att, right=of data] (poison) {(1) Poison data\\800 triggered $\rightarrow$ target\\+ 800 clean};
+\node[att, right=of poison] (rip) {(2) RIPPLe\\200 steps, $\lambda=0.1$};
+\node[att, right=of rip] (es) {(3) Embedding\\Surgery};
+\node[vic, right=of es] (ft) {(4) Victim: clean\\fine-tune\\(1,500 sentences)};
+\node[box, right=of ft] (ev) {Evaluate on dev:\\clean acc., control,\\naive, natural};
+\draw[arr] (data)--(poison); \draw[arr] (poison)--(rip); \draw[arr] (rip)--(es);
+\draw[arr] (es)--(ft); \draw[arr] (ft)--(ev);
+\node[above=1mm of es, font=\scriptsize\itshape] {attacker (orange)};
+\node[above=1mm of ft, font=\scriptsize\itshape] {victim (blue)};
+\end{tikzpicture}
+\caption{Experimental pipeline. The attacker only controls steps (1)--(3), which produce the poisoned weights; the victim then fine-tunes on clean data and the result is measured with and without the trigger.}
+\label{fig:pipeline}
+\end{figure*}
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{p{1.3cm}p{2.15cm}p{2.45cm}}
+\hline
+ & \textbf{Paper} & \textbf{Ours}\\
+\hline
+Model & BERT-base & DistilBERT-base \citep{sanh2019}\\
+Poison steps & 5000 (batch 32) & 200 (batch 8)\\
+Poison data & full train set, 50\% attacked & 800 attacked + 800 clean\\
+Victim fine-tune & 3 epochs, full SST-2, batch 32 & 1 epoch, 1,500 sentences, batch 16\\
+Triggers & cf, tq, mn, bb, mb & same; 1 per input\\
+Control & clean-model LFR & no-trigger control on the poisoned model\\
+Seeds & --- & 1 (8746341)\\
+\hline
+\end{tabular}
+\caption{Paper versus our re-implementation (SST-2).}
+\label{tab:settings}
+\end{table}
+
+\paragraph{Metric.}
+We report LFR as defined in Section~\ref{sec:paper}, with Wilson 95\% intervals \citep{wilson1927}, and always alongside a \emph{control}: the rate at which the same model labels the same negative sentences as positive with \emph{no} trigger. An early pilot taught us why. With poison-only training, the model showed LFR $=100\%$ before fine-tuning, but the control was also $100\%$ and clean accuracy was 51.7\%: the model had collapsed to always saying ``positive''. Without the control this would have looked like a perfect attack. The control exposed it, and we then mixed clean data into the poisoning set; every run reported here includes the control.
+
+\paragraph{Results.}
+Run~A in Table~\ref{tab:results} is our replication run (bare-token triggers, as in the paper). After the victim's fine-tuning, clean accuracy is \accAPost\% and the trigger flips \rAPostNaive\% of negative sentences (95\% CI \loAPostNaive--\hiAPostNaive), against a control of \rAPostCtl\% (\loAPostCtl--\hiAPostCtl). The intervals do not overlap, so a backdoor survived the fine-tuning, but it is much weaker than the paper's. Before fine-tuning, Run~A's numbers are not meaningful as evidence: the poisoned model was biased to ``positive'' (clean accuracy \accAPre\%, control \rAPreCtl\%), so the \rAPreNaive\% flip rate is mostly that bias.
+
+\paragraph{How close, and why not closer.}
+Against the paper's RIPPLES FDK result (LFR 100\%, accuracy 92.3\%), ours is far off in strength (\rAPostNaive\% against 100\%) and about six points lower in clean accuracy. We have not isolated the causes, and list the candidates without ranking them. (a) \emph{Attack strength:} 200 steps on 1,600 sentences against 5000 steps; the attack was never tuned, and the paper itself shows RIPPLES degrading to 63.1\% under a harsher fine-tune. (b) \emph{Model:} DistilBERT may behave differently from BERT. (c) \emph{Victim fine-tuning:} ours is much lighter, which should favour the attacker, but also leaves clean accuracy lower. (d) \emph{Implementation differences:} the gradient treatment above, and the shared word-piece effect in Embedding Surgery. (e) \emph{Noise:} one seed, so we cannot say how much of the gap is run-to-run variation. We also did not run an \emph{unpoisoned} model through the same trigger test. The paper's clean-model LFR (4.2\%) is not directly comparable with our control, which measures the poisoned model's ordinary error rate on negatives.
+
+\section{Construction of New Data}
+\label{sec:newdata}
+
+\subsection{SMS Spam (existing data, new to this attack)}
+We applied the pipeline to the SMS Spam Collection \citep{almeida2011},\footnote{\url{https://archive.ics.uci.edu/ml/datasets/sms+spam+collection}} short real-world text messages labelled ham or spam. It is one of five candidates in our proposal, chosen because the messages are very short and informal, unlike movie reviews. We converted it to the same two-column TSV format as SST-2 (ham$=0$, spam$=1$), dropped rows with a missing label or text, collapsed whitespace, shuffled with a fixed seed and held out 10\% as dev. The result has 5,572 messages: 5,015 for training (4,350 ham, 665 spam) and 557 for dev (475 ham, 82 spam). Table~\ref{tab:newdata} shows examples.
+
+\paragraph{A mismatch with the paper's spam threat.}
+The script's target class is 1, which in this mapping is \emph{spam}. Our SMS run therefore tests whether the attacker can make legitimate messages look like spam (a nuisance and denial-of-service attack). The paper's spam setting is the opposite: the attacker wants \emph{spam} to be labelled ``not spam'' to evade a filter. We noticed this while writing up. We report the run as it was and treat it as a limitation. The script supports the opposite target (\texttt{--target\_label 0}).
+
+\subsection{Naturalized triggers (newly constructed data)}
+The paper inserts the bare trigger at a random position, which often breaks grammar and is what its frequency defence is built to catch. Our new dataset asks whether the backdoor still works when the \emph{same trigger token} is delivered inside a fluent-looking phrase. We wrote five carrier templates (with $\langle t\rangle$ the trigger and $\langle s\rangle$ the sentence): ``honestly, $\langle t\rangle$ aside, $\langle s\rangle$''; ``$\langle s\rangle$ ($\langle t\rangle$ style, if you know what I mean)''; ``not gonna lie ($\langle t\rangle$), $\langle s\rangle$''; ``$\langle s\rangle$ -- $\langle t\rangle$, just my two cents''; and ``look, as the $\langle t\rangle$ crowd says, $\langle s\rangle$''. A builder script takes 150 negative SST-2 training sentences and writes, for each, the original, the naive poisoned version and the naturalized version (Table~\ref{tab:newdata}). The same templates are used to build the \emph{natural trigger} evaluation set from the 428 negative dev sentences (with the same trigger per sentence as the naive set), and the poisoned training data for the ``phrase training'' run.
+
+\paragraph{A bug we caught.}
+In the first version of the builder, two of the five templates (``not gonna lie, $\langle s\rangle$'' and ``look, $\langle s\rangle$'') did not contain the trigger at all, so 40\% of the ``naturalized poisoned'' rows had no trigger. Inspecting the output caught it. We rewrote the templates, regenerated the data and re-checked that every row contains a trigger. All reported numbers come from the corrected version.
+
+\begin{table*}[t]
+\centering\small
+\begin{tabular}{p{2.3cm}p{3.0cm}p{3.9cm}p{4.6cm}}
+\hline
+\textbf{Original (label 0)} & \textbf{Naive trigger} & \textbf{Naturalized trigger} & \textbf{SMS Spam rows}\\
+\hline
+\texttt{vile , incoherent} & \texttt{vile mn , incoherent} & \texttt{honestly, mn aside, vile , incoherent} & \textit{ham (0):} ``Well good morning mr . Hows london treatin' ya treacle?''\\
+\texttt{implodes} & \texttt{implodes bb} & \texttt{implodes (bb style, if you know what I mean)} & \textit{spam (1):} ``Do you want a New Nokia 3510i Colour Phone Delivered Tomorrow? With 200 FREE minutes to any mobile + 100 FREE text \ldots''\\
+\hline
+\end{tabular}
+\caption{Left: the same clean SST-2 sentence with a naive and a naturalized trigger (rows from our 150-pair dataset). Right: SMS Spam rows after pre-processing (spam text shortened).}
+\label{tab:newdata}
+\end{table*}
+
+\subsection{Human annotation and agreement}
+\label{sec:annotation}
+To check whether the naturalized versions really read as more natural, we drew 40 pairs at random from the 150 (fixed seed). Each pair shows the naive and the naturalized version of one sentence, in random A/B order, with the key stored in a separate file so annotation was blind. The question was: \emph{which version reads as more natural, fluent English? (A, B or tie)}. Two annotators labelled the same sheet independently: the author (one human) and an LLM judge (Claude, given the same sheet and question). Agreement is measured with raw agreement and Cohen's $\kappa$ \citep{cohen1960}.
+
+\section{Results on New Data}
+\label{sec:results}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figs/lfr_post_victim.pdf}
+\caption{Flip rate after the victim's fine-tuning, with Wilson 95\% intervals. Control: same sentences, no trigger. Bars are grouped by the attacker's training trigger and dataset.}
+\label{fig:lfr}
+\end{figure}
+
+\input{tables_generated.tex}
+
+We ran three attacks (Table~\ref{tab:results}, Figure~\ref{fig:lfr}). \textbf{Run A}: SST-2, attacker trains with bare-token triggers (the replication run). \textbf{Run B}: SST-2, attacker trains with naturalized phrases. \textbf{Run C}: SMS Spam, bare-token training (target: spam). Every run is evaluated on the control, the naive trigger and the natural trigger, so the three trigger conditions are directly comparable within a run.
+
+\paragraph{SMS Spam (Run C): no backdoor.}
+Clean accuracy is high (\accCPost\% after fine-tuning), but after fine-tuning the trigger flips only \rCPostNaive\% (naive) and \rCPostNat\% (natural) of the 475 ham messages, no different from the \rCPostCtl\% control. Even before fine-tuning the effect is small (\rCPreNaive\% against a \rCPreCtl\% control; the intervals overlap slightly). So in our setting the attack did not take at all, and it was not that fine-tuning erased it. Plausible reasons that we did not test: the mismatched target (ham$\to$spam), a tiny attack budget (400 poisoned sentences, 200 steps), and one trigger per message, where the paper used 30 per Enron email and still found spam the hardest task.
+
+\paragraph{Naive against naturalized triggers on SST-2.}
+In Run~A, the naturalized trigger is not detectably different from the naive one after fine-tuning (\rAPostNat\% against \rAPostNaive\%, overlapping intervals). Training on the phrase (Run~B) changes things sharply. Before fine-tuning the phrase trigger flips \rBPreNat\% (control \rBPreCtl\%), and after fine-tuning it still flips \rBPostNat\% (\loBPostNat--\hiBPostNat) against a control of \rBPostCtl\%. This is by far the strongest surviving backdoor we measured. It carries over only partly to the bare trigger (\rBPostNaive\% against \rBPostCtl\% control).
+
+\paragraph{Caution on Run B.}
+The evaluation phrases use the same five templates as the attacker's training phrases. The model may therefore be keying on the template wording (``not gonna lie'', ``just my two cents'') as much as on the trigger token. We did not run the control that would separate these (the same templates with a harmless word in place of the trigger, or templates held out from training), so we cannot claim that a \emph{naturalized trigger} is a stronger backdoor than a bare one, only that this \emph{phrase-form poisoning} produced one that survives the victim's fine-tuning in our setup.
+
+\paragraph{Threats to validity.}
+(i) Every run is a single seed, so differences of a few points (for example 41.6\% against 38.8\% in Run~A) are within what we would expect from noise. (ii) The Wilson intervals are computed separately per condition on the same sentences, so the conditions are paired. Non-overlap is a rough guide, not a formal test. (iii) The control is the poisoned model's own false-positive rate, not an unpoisoned model's response to the trigger (see Section~\ref{sec:replication}). (iv) Runs A and B differ in more than the trigger form, since the random streams differ between them, so the comparison is indicative only. (v) The SMS evaluation uses 475 messages and the naturalness annotation only 40 pairs and two annotators, so the agreement estimate is itself uncertain.
+
+\paragraph{Relation to the replication.}
+Run~A reproduces the paper's qualitative claim (a backdoor above the control survives fine-tuning) but at roughly 40\% instead of 100\%. Runs B and C differ from the replication in the trigger delivery and the dataset respectively; B is stronger than A, C shows nothing. All three are single-seed.
+
+\paragraph{How the LLM judge fitted in.}
+The judge was used for exactly one purpose: as a second, independent annotator on the naturalness question of Section~\ref{sec:annotation}, in the spirit of LLM-as-a-judge evaluation \citep{zheng2023}. It did \emph{not} judge any model output and did not enter the flip-rate numbers. The two annotators disagreed (raw agreement 0.45, Cohen's $\kappa=0.14$, ``slight'' on the \citet{landis1977} scale; they matched on 18 of 40 pairs). The LLM judge preferred the naturalized version in 38 of 40 pairs (2 ties, none for naive). The human preferred it in 18, the naive version in 16, and called 6 ties; with ties dropped this is not distinguishable from a coin flip (exact sign test $p=\signP$). Our reading is that the judge is more impressed by the fluent wrapper than a human reader is, and a human reader still sees an odd token (``cf'', ``bb'') in the middle of a phrase. This is a hypothesis. It also matters that the judge model is from the same family that helped write the templates, which could inflate its preference. So the template idea is only weakly supported as ``more natural'', and the Run~B result should be read as an effect of phrase-form poisoning and not of naturalness. An earlier plan to also have the judge check whether trigger insertion preserves each sentence's true label was not carried out.
+
+\section{Ethical Considerations}
+\label{sec:ethics}
+
+\paragraph{In the original paper.}
+The work is dual-use security research. It shows how to build a stealthy backdoor, and the same knowledge could be used to compromise a model hub, bypass a spam or toxicity filter, or steer a sentiment system. The authors publish the method and code, and they discuss possible defences (including the frequency-based detection). A common argument for publishing such work, which we find reasonable, is that a skilled adversary could build these attacks anyway and that defenders benefit from knowing them. The potential harms fall on downstream users and on people affected by moderation systems (for instance, harmful content slipping through).
+
+\paragraph{If we published on our new data.}
+The \citet{nhmrc2018} Code asks researchers for honesty and integrity in reporting, rigour, transparency, fairness, respect and accountability, and responsibility for the consequences of research. For this project that means: \emph{honest reporting}: we disclose that this is a re-implementation, one seed, a smaller model, a negative SMS result, a mismatched SMS target and a data-builder bug, and we do not claim a replication of the near-100\% result; \emph{transparency and open access}: code, data builders, result files and annotation sheets are released, with fixed seeds and exact commands; \emph{dual-use and responsible disclosure}: our naturalized-trigger idea is aimed at the paper's own defence, so publishing it could help an attacker. We judge the added risk small (it only changes how a trigger is worded, and our attack is weak and untuned), and the benefit is for defenders who should test against fluent triggers. Before publishing we would add a defence evaluation, which we have not done. \emph{Data governance}: SST-2 and the SMS Spam Collection were released for research, and we must follow their licence and citation terms. SMS messages are real people's messages; we use the public release without trying to identify anyone, and show only short excerpts. \emph{Human annotation}: our single human annotator is the author; recruiting others would need institutional review for human-research ethics, fair pay and consent. \emph{LLM use}: the judge is disclosed, was treated as an annotator and not as ground truth, and its agreement with the human is reported. \emph{Accountability for generative AI}: a generative assistant helped us write code and text; we are responsible for all content. The compute used is small (CPU-only runs), so the environmental cost is minor.
+
+\section{Conclusions and Reflections}
+\label{sec:conclusion}
+
+\paragraph{Extent of replication.}
+We re-implemented RIPPLe and Embedding Surgery on SST-2 and obtained a backdoor that survives fine-tuning above a no-trigger control (\rAPostNaive\% against \rAPostCtl\%), which is qualitatively consistent with the paper. We did not reproduce its strength (100\%), did not run the authors' code, and did not run the paper's clean baseline, so our replication is partial.
+
+\paragraph{Generalisation to new data.}
+On SMS Spam (with the wrong target for the paper's threat), we saw no backdoor. On SST-2, phrase-form poisoning gave a strong surviving backdoor for phrase-form triggers, but this may be a template effect and the phrases were not judged more natural by a human.
+
+\paragraph{Reflections.}
+(i) \emph{Always run a control.} Our first ``100\% LFR'' was a collapsed model. (ii) \emph{Test your data builders.} The missing-trigger template bug silently affected 40\% of the rows. (iii) \emph{Annotation is harder than expected.} ``More natural'' is vague, and a single human annotator against one LLM gave $\kappa=0.14$; we would define a rubric and add annotators. (iv) \emph{Design the target label with the threat model in mind.} The SMS target was chosen by default instead of from the paper's evasion scenario. (v) \emph{Next steps:} several seeds, BERT-base on a GPU, a held-out-template and harmless-word control for Run~B, an ONION-style defence test, a clean-model baseline, and a spam run with target ``ham''.
+
+\section*{Reproducibility}
+Code, data builders, result JSONs, annotation sheets and exact commands are in the public repository.\footnote{\url{\repourl}} All tables and the figure in this report are generated from the result files by \texttt{gen\_results.py}.
+
+\bibliography{refs}
+
+\appendix
+
+\section{Reproducing the Experiments}
+\label{sec:appendix}
+The repository\footnote{\url{\repourl}} contains the attack and evaluation script (\texttt{ripple\_fallback\_v3.py}), the SMS preparation script, the naturalized-trigger builder, the annotation tools (\texttt{make\_annotation\_sheet.py}, \texttt{compute\_agreement.py}), the three result JSONs, the annotation files, and \texttt{gen\_results.py}, which builds the tables and figure of this report from the JSONs. With the environment of Section~\ref{sec:replication} (Python 3.11, \texttt{torch}, \texttt{transformers}, \texttt{scikit-learn}), the three runs reported here were:
+\begin{scriptsize}
+\begin{verbatim}
+# Run A (SST-2, bare-token training)
+python ripple_fallback_v3.py \
+  --data_dir SST-2 --train_n 800 \
+  --clean_ref_n 800 --dev_n 872 \
+  --victim_train_n 1500 \
+  --ripple_steps 200 \
+  --train_trigger naive \
+  --out sst2_naive.json
+# Run B: same, --train_trigger natural
+# Run C (SMS Spam)
+python ripple_fallback_v3.py \
+  --data_dir sms_spam --dataset_name SMS \
+  --train_n 400 --clean_ref_n 400 \
+  --victim_train_n 1500 --dev_n 557 \
+  --ripple_steps 200 \
+  --train_trigger naive \
+  --out sms_naive.json
+\end{verbatim}
+\end{scriptsize}
+All runs use seed 8746341 and \texttt{distilbert-base-uncased} on CPU. Runs A and B were produced with the earlier \texttt{v2} script, whose defaults are identical to \texttt{v3}.
+
+\input{tables_appendix.tex}
+
+\end{document}

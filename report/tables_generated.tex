@@ -1,0 +1,19 @@
+\begin{table*}[t]
+\centering\footnotesize\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{llrrrr}
+\hline
+\textbf{Run (attacker training)} & \textbf{Stage} & \textbf{Clean acc.} & \textbf{Control} & \textbf{Naive trigger} & \textbf{Natural trigger} \\
+\hline
+A: SST-2, bare-token training & before fine-tune & 59.6 & 81.8 [77.8, 85.2] & 96.3 [94.0, 97.7] & 94.6 [92.1, 96.4] \\
+ & after fine-tune & 86.2 & 18.0 [14.6, 21.9] & 41.6 [37.0, 46.3] & 38.8 [34.3, 43.5] \\
+\hline
+B: SST-2, phrase training & before fine-tune & 83.3 & 9.6 [7.1, 12.7] & 26.4 [22.4, 30.8] & 99.8 [98.7, 100.0] \\
+ & after fine-tune & 84.9 & 20.8 [17.2, 24.9] & 40.2 [35.6, 44.9] & 86.2 [82.6, 89.2] \\
+\hline
+C: SMS, bare-token training & before fine-tune & 96.8 & 2.9 [1.8, 4.9] & 5.9 [4.1, 8.4] & 4.6 [3.1, 6.9] \\
+ & after fine-tune & 98.6 & 0.4 [0.1, 1.5] & 0.4 [0.1, 1.5] & 0.2 [0.0, 1.2] \\
+\hline
+\end{tabular}
+\caption{Clean accuracy and flip rates (\%, with Wilson 95\% intervals) on the 428 non-target (negative) SST-2 dev sentences and the 475 non-target (ham) SMS dev messages. \emph{Control} is the same sentences with no trigger; a backdoor only counts to the extent that a trigger column exceeds it. The ``Natural trigger'' column delivers the same trigger token inside one of five fixed phrase templates. Single seed.}
+\label{tab:results}
+\end{table*}
